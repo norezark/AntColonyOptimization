@@ -5,8 +5,8 @@ import matplotlib.pyplot as plt
 
 class Agent:
 	ALPHA = 1
-	BETA = 5
-	Q = 10
+	BETA = 7
+	Q = 100
 
 	def __init__(self, towns, startTown, roads, pheromoneList):
 		self.current = startTown
@@ -111,11 +111,13 @@ class Road:
 		return ((self.iTown == other.iTown) and (self.jTown == other.jTown)) or ((self.iTown == other.jTown) and (self.jTown == other.iTown))
 
 class AntColony:
-	RHO = 0.4
+	RHO = 0.3
 
-	def __init__(self, towns, startTown, agentCount):
+	def __init__(self, towns, startTown, agentCount, ax, bestLines):
 		self.towns = towns
 		self.startTown = startTown
+		self.ax = ax
+		self.bestLines = bestLines
 		self.roads = []
 		for i in range(len(self.towns)):
 			for j in range(i+1, len(self.towns)):
@@ -131,9 +133,9 @@ class AntColony:
 		for agent in self.agents:
 			d = agent.calcDeltaPheromone()
 			for key in d.keys():
-				self.pheromoneList[key] = (1-self.RHO) * d[key] + self.pheromoneList[key]
+				self.pheromoneList[key] = (1 - self.RHO) * d[key] + self.pheromoneList[key]
 		
-		print(*[f'({key[0]}, {key[1]}) :{self.pheromoneList[key]:0.2}	' for key in self.pheromoneList.keys()])
+		# print(*[f'({key[0]}, {key[1]}) :{self.pheromoneList[key]:0.2}	' for key in self.pheromoneList.keys()])
 		
 	def walkAgents(self):
 		self.agents = [Agent(self.towns, self.startTown, self.roads, self.pheromoneList) for i in range(self.agentCount)]
@@ -141,6 +143,8 @@ class AntColony:
 		for agent in self.agents:
 			records.append(agent.walk())
 		self.calcPheromone()
+		for i in range(self.agentCount):
+			self.ax.plot([t.position[0] for t in records[i]], [t.position[1] for t in records[i]], alpha=1.0/(10*50))
 		best = sorted(records, key=lambda record: sum([record[i].getRange(record[i+1]) for i in range(len(record)-1)]))[-1]
 		return best
 	
@@ -149,19 +153,14 @@ class AntColony:
 			best = self.walkAgents()
 			print('->'.join([town.getName() for town in best]), sum([best[i].getRange(best[i+1]) for i in range(len(best)-1)]))
 			
-			lines.set_data([town.position[0] for town in best], [town.position[1] for town in best])
+			self.bestLines.set_data([town.position[0] for town in best], [town.position[1] for town in best])
 			plt.pause(0.001)
 		return best
 
-fig, ax = plt.subplots(1,1)
-fig = plt.figure()
-ax = fig.add_subplot(1,1,1)
-ax.set_xlim(0,100)
-ax.set_ylim(0,100)
-lines, = ax.plot((0,0))
 def main():
-	names = [str(i) for i in range(8)]
-	positions = [(random.randint(0, 100), random.randint(0, 100)) for name in names]
+	names = [str(i) for i in range(7)]
+	mapRange = 1000
+	positions = [(random.randint(0, mapRange), random.randint(0, mapRange)) for name in names]
 	towns = [Town(names[i], positions[i]) for i in range(len(names))]
 	# townA = Town('A', (2, 1))
 	# townB = Town('B', (9, 2))
@@ -169,15 +168,22 @@ def main():
 	# townD = Town('D', (5, 9))
 	# townE = Town('E', (1, 5))
 	# towns = [townA, townB, townC, townD, townE]
-	
+
 	startTown = towns[random.randint(0, len(towns)-1)]
-	agentCount = 5
-	antColony = AntColony(towns, startTown, agentCount)
-	optimizeCount = 100
-	record = antColony.optimization(optimizeCount)
+	agentCount = 10
+	optimizeCount = 50
 	
+	fig, ax = plt.subplots(1,1)
+	fig = plt.figure()
+	ax = fig.add_subplot(1,1,1)
+	ax.set_xlim(0,mapRange)
+	ax.set_ylim(0,mapRange)
+	bestLines, = ax.plot([], c="Red", linewidth=2)
+	
+	antColony = AntColony(towns, startTown, agentCount, ax, bestLines)
+	record = antColony.optimization(optimizeCount)
 	print('->'.join([town.getName() for town in record]))
-	lines.set_data([town.position[0] for town in record], [town.position[1] for town in record])
+	bestLines.set_data([town.position[0] for town in record], [town.position[1] for town in record])
 	plt.show()
 
 
