@@ -4,11 +4,7 @@ import math
 import matplotlib.pyplot as plt
 
 class Agent:
-	ALPHA = 1
-	BETA = 7
-	Q = 100
-
-	def __init__(self, towns, startTown, roads, pheromoneList):
+	def __init__(self, towns, startTown, roads, pheromoneList, ALPHA=1, BETA=3, Q=1000):
 		self.current = startTown
 		self.roads = roads
 		self.pheromoneList = pheromoneList
@@ -16,12 +12,15 @@ class Agent:
 		self.notVisitedTowns.remove(startTown)
 		self.visitedTowns = [startTown]
 		self.passedRoads = []
+		self.ALPHA = ALPHA
+		self.BETA = BETA
+		self.Q = Q
 	
 	def calcScoreNumerator(self, jTown):
-		for road in self.roads:
-			if Road(self.current, jTown) == road:
-				key = road.toHashKey()
-		return (self.pheromoneList[key] ** self.ALPHA) * ((1/self.current.getRange(jTown)) ** self.BETA)
+		# for road in self.roads:
+			# if Road(self.current, jTown) == road:
+				# key = road.toHashKey()
+		return (self.pheromoneList[(self.current, jTown)] ** self.ALPHA) * ((1/self.current.getRange(jTown)) ** self.BETA)
 	
 	def calcScore(self, jTown):
 		a = self.calcScoreNumerator(jTown)
@@ -58,18 +57,17 @@ class Agent:
 		for road in self.roads:
 			if Road(self.current, self.visitedTowns[0]) == road:
 				self.passedRoads.append(road)
-		
-		return self.visitedTowns
+		self.visitedRoadLength = sum([self.visitedTowns[i].getRange(self.visitedTowns[i+1]) for i in range(len(self.visitedTowns)-1)])
 	
 	def calcDeltaPheromone(self):
-		visitedRoadLength = sum([self.visitedTowns[i].getRange(self.visitedTowns[i+1]) for i in range(len(self.visitedTowns)-1)])
 		deltaPheromoneList = {}
 		for road in self.roads:
+			f = True
 			for passedRoad in self.passedRoads:
 				if road == passedRoad:
-					deltaPheromoneList[road.toHashKey()] = self.Q / visitedRoadLength
-					break
-			else:
+					deltaPheromoneList[road.toHashKey()] = self.Q / self.visitedRoadLength
+					f = False
+			if f:
 				deltaPheromoneList[road.toHashKey()] = 0
 		# print(*[f'({key[0]}, {key[1]}) :{self.pheromoneList[key]}	' for key in deltaPheromoneList.keys()])
 		return deltaPheromoneList
@@ -80,7 +78,7 @@ class Town:
 		self.position = position
 	
 	def getRange(self, jTown):
-		return math.sqrt(math.pow(self.position[0] - jTown.position[0], 2) + math.pow(self.position[1] - jTown.position[1], 2))
+		return math.sqrt((self.position[0] - jTown.position[0])*(self.position[0] - jTown.position[0]) + (self.position[1] - jTown.position[1])*(self.position[1] - jTown.position[1]))
 	
 	def getName(self):
 		return self.name
@@ -111,21 +109,20 @@ class Road:
 		return ((self.iTown == other.iTown) and (self.jTown == other.jTown)) or ((self.iTown == other.jTown) and (self.jTown == other.iTown))
 
 class AntColony:
-	RHO = 0.3
-
-	def __init__(self, towns, startTown, agentCount, ax, bestLines):
+	def __init__(self, towns, startTown, agentCount, ax, bestLines, RHO=0.3):
 		self.towns = towns
 		self.startTown = startTown
 		self.ax = ax
 		self.bestLines = bestLines
 		self.roads = []
 		for i in range(len(self.towns)):
-			for j in range(i+1, len(self.towns)):
+			for j in range(len(self.towns)):
 				self.roads.append(Road(towns[i], towns[j]))
 		self.pheromoneList = {}
 		for road in self.roads:
 			self.pheromoneList[road.toHashKey()] = random.random()
 		self.agentCount = agentCount
+		self.RHO = RHO
 		
 	def calcPheromone(self):
 		for key in self.pheromoneList:
@@ -133,19 +130,21 @@ class AntColony:
 		for agent in self.agents:
 			d = agent.calcDeltaPheromone()
 			for key in d.keys():
-				self.pheromoneList[key] = (1 - self.RHO) * d[key] + self.pheromoneList[key]
+				t = (1 - self.RHO) * d[key] + self.pheromoneList[key]
+				# if t < 1.0e-5:
+					# t = 1.0e-5
+				self.pheromoneList[key] = t
 		
-		# print(*[f'({key[0]}, {key[1]}) :{self.pheromoneList[key]:0.2}	' for key in self.pheromoneList.keys()])
+		print(*[f'({key[0]}, {key[1]}) :{self.pheromoneList[key]:0.2}	' for key in self.pheromoneList.keys()])
 		
 	def walkAgents(self):
-		self.agents = [Agent(self.towns, self.startTown, self.roads, self.pheromoneList) for i in range(self.agentCount)]
-		records = []
+		self.agents = [Agent(self.towns, self.startTown, self.roads, self.pheromoneList, ALPHA=1, BETA=5, Q=1000) for i in range(self.agentCount)]
 		for agent in self.agents:
-			records.append(agent.walk())
+			agent.walk()
 		self.calcPheromone()
 		for i in range(self.agentCount):
-			self.ax.plot([t.position[0] for t in records[i]], [t.position[1] for t in records[i]], alpha=1.0/(10*50))
-		best = sorted(records, key=lambda record: sum([record[i].getRange(record[i+1]) for i in range(len(record)-1)]))[-1]
+			self.ax.plot([t.position[0] for t in self.agents[i].visitedTowns], [t.position[1] for t in self.agents[i].visitedTowns], alpha=1.0/(10*50))
+		best = min(self.agents, key=lambda agent: agent.visitedRoadLength).visitedTowns
 		return best
 	
 	def optimization(self, count):
@@ -158,9 +157,12 @@ class AntColony:
 		return best
 
 def main():
-	names = [str(i) for i in range(7)]
+	names = [str(i) for i in range(15)]
 	mapRange = 1000
 	positions = [(random.randint(0, mapRange), random.randint(0, mapRange)) for name in names]
+	for i in range(len(positions)):
+		for j in range(len(positions[i])):
+			print('positions[' + str(i) + '][' + str(j) + '] = ' + str(positions[i][j]) + ';')
 	towns = [Town(names[i], positions[i]) for i in range(len(names))]
 	# townA = Town('A', (2, 1))
 	# townB = Town('B', (9, 2))
@@ -170,7 +172,7 @@ def main():
 	# towns = [townA, townB, townC, townD, townE]
 
 	startTown = towns[random.randint(0, len(towns)-1)]
-	agentCount = 10
+	agentCount = 20
 	optimizeCount = 50
 	
 	fig, ax = plt.subplots(1,1)
@@ -179,11 +181,12 @@ def main():
 	ax.set_xlim(0,mapRange)
 	ax.set_ylim(0,mapRange)
 	bestLines, = ax.plot([], c="Red", linewidth=2)
+	RHO = 0.5
 	
-	antColony = AntColony(towns, startTown, agentCount, ax, bestLines)
-	record = antColony.optimization(optimizeCount)
-	print('->'.join([town.getName() for town in record]))
-	bestLines.set_data([town.position[0] for town in record], [town.position[1] for town in record])
+	antColony = AntColony(towns, startTown, agentCount, ax, bestLines, RHO)
+	bestRecord = antColony.optimization(optimizeCount)
+	print('->'.join([town.getName() for town in bestRecord]))
+	bestLines.set_data([town.position[0] for town in bestRecord], [town.position[1] for town in bestRecord])
 	plt.show()
 
 
