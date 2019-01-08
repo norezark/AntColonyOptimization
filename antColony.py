@@ -2,6 +2,8 @@ import copy
 import random
 import math
 import matplotlib.pyplot as plt
+import cProfile
+import pstats
 
 class Agent:
 	def __init__(self, towns, startTown, roads, pheromoneList, ALPHA=1, BETA=3, Q=1000):
@@ -16,22 +18,21 @@ class Agent:
 		self.BETA = BETA
 		self.Q = Q
 	
-	def calcScoreNumerator(self, jTown):
-		# for road in self.roads:
-			# if Road(self.current, jTown) == road:
-				# key = road.toHashKey()
-		return (self.pheromoneList[(self.current, jTown)] ** self.ALPHA) * ((1/self.current.getRange(jTown)) ** self.BETA)
+	def calcScoreNumerator(self, road):
+		return (self.pheromoneList[road.toHashKey()] ** self.ALPHA) * ((1/road.getLength()) ** self.BETA)
 	
-	def calcScore(self, jTown):
-		a = self.calcScoreNumerator(jTown)
-		b = sum([self.calcScoreNumerator(town) for town in self.notVisitedTowns])
+	def calcScore(self, currentRoad, notVisitedRoads):
+		a = self.calcScoreNumerator(currentRoad)
+		b = sum([self.calcScoreNumerator(road) for road in notVisitedRoads])
 		return a / b
 	
 	def calcProbability(self):
 		probability = {}
+		notVisitedRoads = [Road(self.current, town) for town in self.notVisitedTowns]
 		for town in self.notVisitedTowns:
-			a = self.calcScore(town)
-			b = sum([self.calcScore(t) for t in self.notVisitedTowns])
+			currentRoad = Road(self.current, town)
+			a = self.calcScore(currentRoad, notVisitedRoads)
+			b = sum([self.calcScore(road, notVisitedRoads) for road in notVisitedRoads])
 			probability[town] = a / b
 		return probability
 	
@@ -78,7 +79,7 @@ class Town:
 		self.position = position
 	
 	def getRange(self, jTown):
-		return math.sqrt((self.position[0] - jTown.position[0])*(self.position[0] - jTown.position[0]) + (self.position[1] - jTown.position[1])*(self.position[1] - jTown.position[1]))
+		return ((self.position[0] - jTown.position[0])**2 + (self.position[1] - jTown.position[1])**2)**(1/2)
 	
 	def getName(self):
 		return self.name
@@ -131,19 +132,17 @@ class AntColony:
 			d = agent.calcDeltaPheromone()
 			for key in d.keys():
 				t = (1 - self.RHO) * d[key] + self.pheromoneList[key]
-				# if t < 1.0e-5:
-					# t = 1.0e-5
 				self.pheromoneList[key] = t
 		
-		print(*[f'({key[0]}, {key[1]}) :{self.pheromoneList[key]:0.2}	' for key in self.pheromoneList.keys()])
+		# print(*[f'({key[0]}, {key[1]}) :{self.pheromoneList[key]:0.2}	' for key in self.pheromoneList.keys()])
 		
 	def walkAgents(self):
-		self.agents = [Agent(self.towns, self.startTown, self.roads, self.pheromoneList, ALPHA=1, BETA=5, Q=1000) for i in range(self.agentCount)]
+		self.agents = [Agent(self.towns, self.startTown, self.roads, self.pheromoneList, ALPHA=1, BETA=2, Q=1000) for i in range(self.agentCount)]
 		for agent in self.agents:
 			agent.walk()
 		self.calcPheromone()
-		for i in range(self.agentCount):
-			self.ax.plot([t.position[0] for t in self.agents[i].visitedTowns], [t.position[1] for t in self.agents[i].visitedTowns], alpha=1.0/(10*50))
+		# for i in range(self.agentCount):
+			# self.ax.plot([t.position[0] for t in self.agents[i].visitedTowns], [t.position[1] for t in self.agents[i].visitedTowns], alpha=1.0/(10*50))
 		best = min(self.agents, key=lambda agent: agent.visitedRoadLength).visitedTowns
 		return best
 	
@@ -153,39 +152,81 @@ class AntColony:
 			print('->'.join([town.getName() for town in best]), sum([best[i].getRange(best[i+1]) for i in range(len(best)-1)]))
 			
 			self.bestLines.set_data([town.position[0] for town in best], [town.position[1] for town in best])
+			self.ax.set_title(str(i+1))
 			plt.pause(0.001)
+			plt.savefig("aco/" + str(i) + ".png")
 		return best
 
 def main():
-	names = [str(i) for i in range(15)]
-	mapRange = 1000
-	positions = [(random.randint(0, mapRange), random.randint(0, mapRange)) for name in names]
-	for i in range(len(positions)):
-		for j in range(len(positions[i])):
-			print('positions[' + str(i) + '][' + str(j) + '] = ' + str(positions[i][j]) + ';')
-	towns = [Town(names[i], positions[i]) for i in range(len(names))]
-	# townA = Town('A', (2, 1))
-	# townB = Town('B', (9, 2))
-	# townC = Town('C', (10, 4))
-	# townD = Town('D', (5, 9))
-	# townE = Town('E', (1, 5))
-	# towns = [townA, townB, townC, townD, townE]
+	c_profile = cProfile.Profile()
+	c_profile.enable()
+
+	# names = [str(i) for i in range(15)]
+	# mapRange = 1000
+	# positions = [(random.randint(0, mapRange), random.randint(0, mapRange)) for name in names]
+	# positions = [[0, 0] for i in range(len(names))]
+	# positions[0][0] = 984
+	# positions[0][1] = 98
+	# positions[1][0] = 238
+	# positions[1][1] = 919
+	# positions[2][0] = 476
+	# positions[2][1] = 14
+	# positions[3][0] = 792
+	# positions[3][1] = 782
+	# positions[4][0] = 143
+	# positions[4][1] = 188
+	# positions[5][0] = 801
+	# positions[5][1] = 550
+	# positions[6][0] = 713
+	# positions[6][1] = 617
+	# positions[7][0] = 313
+	# positions[7][1] = 108
+	# positions[8][0] = 592
+	# positions[8][1] = 918
+	# positions[9][0] = 101
+	# positions[9][1] = 173
+	# positions[10][0] = 453
+	# positions[10][1] = 492
+	# positions[11][0] = 944
+	# positions[11][1] = 594
+	# positions[12][0] = 620
+	# positions[12][1] = 675
+	# positions[13][0] = 212
+	# positions[13][1] = 22
+	# positions[14][0] = 750
+	# positions[14][1] = 219
+	# for i in range(len(positions)):
+		# for j in range(len(positions[i])):
+			# print('positions[' + str(i) + '][' + str(j) + '] = ' + str(positions[i][j]) + ';')
+	# towns = [Town(names[i], positions[i]) for i in range(len(names))]
+	
+	mapRange = 10
+	townA = Town('A', (2, 1))
+	townB = Town('B', (9, 2))
+	townC = Town('C', (10, 4))
+	townD = Town('D', (5, 9))
+	townE = Town('E', (1, 5))
+	towns = [townA, townB, townC, townD, townE]
 
 	startTown = towns[random.randint(0, len(towns)-1)]
 	agentCount = 20
 	optimizeCount = 50
 	
-	fig, ax = plt.subplots(1,1)
 	fig = plt.figure()
 	ax = fig.add_subplot(1,1,1)
 	ax.set_xlim(0,mapRange)
 	ax.set_ylim(0,mapRange)
 	bestLines, = ax.plot([], c="Red", linewidth=2)
-	RHO = 0.5
+	RHO = 0.3
 	
 	antColony = AntColony(towns, startTown, agentCount, ax, bestLines, RHO)
 	bestRecord = antColony.optimization(optimizeCount)
 	print('->'.join([town.getName() for town in bestRecord]))
+	
+	c_profile.disable()
+	c_stats = pstats.Stats(c_profile)
+	c_stats.sort_stats('tottime').print_stats(10)
+	
 	bestLines.set_data([town.position[0] for town in bestRecord], [town.position[1] for town in bestRecord])
 	plt.show()
 
