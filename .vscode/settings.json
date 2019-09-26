@@ -1,6 +1,7 @@
 {
     "python.linting.pylintEnabled": false,
     "python.linting.pep8Enabled": true,
-    "python.linting.flake8Enabled": true,
-    "editor.formatOnSave": true
+    "python.linting.flake8Enabled": false,
+    "editor.formatOnSave": true,
+    "python.linting.enabled": true
 }

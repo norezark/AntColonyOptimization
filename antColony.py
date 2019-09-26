@@ -5,12 +5,12 @@ import matplotlib.pyplot as plt
 import cProfile
 import pstats
 import numpy as np
-# import bokeh
-# import bokeh.plotting as plt
+# import eel
 
 
 class Agent:
-    def __init__(self, towns, startTown, roads, pheromoneList, ALPHA=1, BETA=3, Q=1000):
+    def __init__(self, towns, startTown, roads, pheromoneList,
+                 ALPHA=1, BETA=3, Q=1000):
         self.current = startTown
         self.roads = roads
         self.pheromoneList = pheromoneList
@@ -23,11 +23,11 @@ class Agent:
         self.Q = Q
 
     def calcProbability(self):
-        notVisitedRoads = [Road(self.current, town)
-                           for town in self.notVisitedTowns]
-        a = np.array([self.pheromoneList[road] for road in notVisitedRoads])
+        a = np.array([self.pheromoneList[Road(self.current, town)]
+                      for town in self.notVisitedTowns])
         a = np.power(a, self.ALPHA)
-        b = np.array([road.getLength() for road in notVisitedRoads])
+        b = np.array([town.getRange(self.current)
+                      for town in self.notVisitedTowns])
         b = np.power(np.reciprocal(b), self.BETA)
         ab = a * b
         score = ab / np.sum(ab)
@@ -50,11 +50,10 @@ class Agent:
         self.passedRoads.append(retRoad)
         self.visitedRoadLength += retRoad.getLength()
 
-    def calcDeltaPheromone(self):
-        deltaPheromoneList = {road: 0 for road in self.roads}
+    def addDeltaPheromone(self, deltaPheromoneList):
         for road in self.passedRoads:
-            deltaPheromoneList[road] = self.Q / self.visitedRoadLength
-        return deltaPheromoneList
+            deltaPheromoneList[road] += self.Q / \
+                (self.visitedRoadLength * road.getLength())
 
 
 class Town:
@@ -104,7 +103,7 @@ class Road:
 class AntColony:
     def __init__(self, towns, startTown, agentCount,
                  ALPHA=1, BETA=2, RHO=0.3,
-                 drawBest=True, drawPheromone=False, drawCutoff=0.1):
+                 drawBest=True, drawPheromone=False, drawCutoff=0.01):
         self.towns = towns
         self.startTown = startTown
         self.roads = []
@@ -119,32 +118,29 @@ class AntColony:
         self.drawBest = drawBest
         self.drawPheromone = drawPheromone
         self.drawCutoff = drawCutoff
-        # self.agents = [Agent(self.towns, self.startTown, self.roads,
-        #                      self.pheromoneList, ALPHA=0, BETA=3, Q=1000)]
-        # self.agents[0].walk()
-        # self.calcPheromone()
+
+        self.agents = [Agent(self.towns, self.startTown, self.roads,
+                             self.pheromoneList, ALPHA=0, BETA=1, Q=1000)]
+        self.agents[0].walk()
+        self.calcPheromone()
+
+        # eel.positions({
+        #     'nodes': {town.name:
+        #               town.position for town in self.towns},
+        #     'edges': {str((road.iTown.name, road.jTown.name)):
+        #               (road.iTown.name, road.jTown.name) for road in self.roads}
+        # })
 
     def calcPheromone(self):
         for key in self.pheromoneList:
             self.pheromoneList[key] = self.RHO * self.pheromoneList[key]
         # best = min(self.agents, key=lambda agent: agent.visitedRoadLength)
         # ave = best.visitedRoadLength / len(self.roads)
+        d = {road: 0 for road in self.roads}
         for agent in self.agents:
-            d = agent.calcDeltaPheromone()
-            for key in d:
-                self.pheromoneList[key] += (1 - self.RHO) * d[key]
-        # print(self.pheromoneList.values())
-        # self.pheromoneList[key] = t * \
-        #     (best.visitedRoadLength / agent.visitedRoadLength)
-        # self.pheromoneList[key] = t * \
-        # math.log(agent.visitedRoadLength, best.visitedRoadLength)
-        # agent = min(self.agents, key=lambda agent: agent.visitedRoadLength)
-        # d = agent.calcDeltaPheromone()
-        # for key in d:
-        #     t = (1 - self.RHO) * d[key] + self.pheromoneList[key]
-        #     self.pheromoneList[key] = t
-
-        # print(self.pheromoneList.values())
+            agent.addDeltaPheromone(d)
+        for key in self.pheromoneList:
+            self.pheromoneList[key] += (1 - self.RHO) * d[key]
 
     def walkAgents(self):
         self.agents = [Agent(self.towns, self.startTown, self.roads,
@@ -158,39 +154,71 @@ class AntColony:
         return best
 
     def optimization(self, count):
+        bests = []
         for i in range(count):
             best = self.walkAgents()
-            print('->'.join([town.getName() for town in best.visitedTowns]),
-                  best.visitedRoadLength)
+            bests.append(best)
+            # print('->'.join([town.getName() for town in best.visitedTowns]))
+            print(i, best.visitedRoadLength)
 
-            plt.cla()
-            plt.title(str(i + 1))
-            if self.drawBest:
-                plt.plot([town.position[0] for town in best.visitedTowns],
-                         [town.position[1] for town in best.visitedTowns],
-                         c="Red", linewidth=2)
+            # eel.refresh({'best': [str((road.iTown.name, road.jTown.name))
+            #                       for road in best.passedRoads],
+            #              'pheromone': {str((road.iTown.name, road.jTown.name)):
+            #                            self.pheromoneList[road]
+            #                            for road in self.pheromoneList}
+            #              })
 
-            if self.drawPheromone:
-                maxPhe = max(self.pheromoneList.values())
-                for road in self.pheromoneList:
-                    t = self.pheromoneList[road] / maxPhe
-                    if t > self.drawCutoff:
-                        plt.plot([road.iTown.position[0], road.jTown.position[0]],
-                                 [road.iTown.position[1], road.jTown.position[1]],
-                                 c="Blue", alpha=t, linewidth=1)
+            if self.drawBest or self.drawPheromone:
+                plt.cla()
+                plt.title(str(i + 1))
 
-            plt.pause(0.01)
-            plt.savefig(f"aco/{i+1}.png")
-        return best
+                if self.drawBest:
+                    plt.plot([town.position[0] for town in best.visitedTowns],
+                             [town.position[1] for town in best.visitedTowns],
+                             c="Red", linewidth=2)
+
+                if self.drawPheromone:
+                    maxPhe = max(self.pheromoneList.values())
+                    for road in self.pheromoneList:
+                        t = self.pheromoneList[road] / maxPhe
+                        if t > self.drawCutoff:
+                            plt.plot([road.iTown.position[0],
+                                      road.jTown.position[0]],
+                                     [road.iTown.position[1],
+                                      road.jTown.position[1]],
+                                     c="Blue", alpha=t, linewidth=1)
+
+                plt.pause(0.01)
+                plt.savefig(f"aco/{i+1}.png")
+        return min(bests, key=lambda agent: agent.visitedRoadLength)
 
 
 def main():
+    # eel.init("web")
+    # web_app_options = {
+    #     "mode": "chrome-app",
+    #     "chromeFlags": ["--incognito", "--window-size=500,500"]
+    # }
+    # eel.start("main.html", options=web_app_options, block=False)
+    # eel.sleep(3)
+
     c_profile = cProfile.Profile()
     c_profile.enable()
 
-    names = [str(i) for i in range(500)]
-    mapRange = 1000
-    positions = [(0, 0) for name in names]
+    names = []
+    positions = []
+    minRoadLength = 1
+    # with open('xql662.tsp', 'r') as file:
+    #     minRoadLength = int(file.readline())
+    #     while True:
+    #         cells = file.readline().split()
+    #         if len(cells) == 0:
+    #             break
+    #         names.append(cells[0])
+    #         positions.append((int(cells[1]), int(cells[2])))
+
+    names = [str(i) for i in range(100)]
+    mapRange = 500
     positions = [(random.randint(0, mapRange), random.randint(0, mapRange))
                  for name in names]
 
@@ -208,14 +236,20 @@ def main():
 
     startTown = towns[0]
     agentCount = 20
-    optimizeCount = 20
+    optimizeCount = 50
     RHO = 0.3
+
+    print('answer: ', minRoadLength)
 
     antColony = AntColony(towns, startTown, agentCount,
                           ALPHA=1, BETA=2, RHO=RHO,
-                          drawBest=True, drawPheromone=False)
-    bestRecord = antColony.optimization(optimizeCount).visitedTowns
-    print('->'.join([town.getName() for town in bestRecord]))
+                          drawBest=False, drawPheromone=False)
+    bestRecord = antColony.optimization(optimizeCount).visitedRoadLength
+    print(f'aco: {bestRecord}, score: {bestRecord / minRoadLength}')
+
+    # antColony = AntColony(towns, startTown, 1, 0, 1, 1, False, False)
+    # kmeansRecord = antColony.optimization(1).visitedRoadLength
+    # print(f'kmeans: {kmeansRecord}, score: {kmeansRecord / minRoadLength}')
 
     c_profile.disable()
     c_stats = pstats.Stats(c_profile)
